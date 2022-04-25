@@ -1,0 +1,215 @@
+﻿@page "/AllProjects"
+@inject HttpClient Http
+
+<PageTitle>All Projects</PageTitle>
+
+<h1>All Projects</h1>
+
+<p>Fetches all projects from REST API</p>
+
+@if (projects == null)
+{
+    <ShowLoadingSpinner />
+}
+else
+{
+    <div class="row">
+        <div class="col-8">
+            <input @bind="searchField" class="form-control" type="text" placeholder="Enter search term..." />
+        </div>
+        <div class="col-2">
+            <button class="btn btn-primary w-100" @onclick="@(async () => await LoadItems())">Search</button>
+        </div>
+        <div class="col-2">
+            <button class="btn btn-danger w-100" @onclick="@(async () => await ResetSearch())">Reset</button>
+        </div>
+    </div>
+    @if (projects.Length > 0)
+    {
+        <table class="table">
+            <thead>
+            <tr>
+                <th>ID</th>
+                <th>Title</th>
+                <th>Description</th>
+                <th>Date of creation</th>
+                <th>Action</th>
+            </tr>
+            </thead>
+            <tbody>
+            @foreach (var project in projects)
+            {
+                <tr>
+                    <td>@project.Id</td>
+                    <td>@project.Title</td>
+                    <td>@project.Description</td>
+                    <td>@project.Created</td>
+                    <td>
+                        <button class="btn btn-sm btn-warning mr-2" @onclick="@(() => EditItem(project.Id))">Edit</button>
+                        <button class="btn btn-sm btn-danger" @onclick="@(async () => await DeleteProject(project.Id))">Delete</button>
+                    </td>
+                </tr>
+            }
+            </tbody>
+        </table>
+    }
+    else
+    {
+        <p>
+            <em>No projects found...</em>
+        </p>
+    }
+}
+
+<div class="fab-container @ButtonCssClass" @onclick="SwitchView">
+    <div class="button iconbutton">
+        <i class="oi oi-plus"></i>
+    </div>
+</div>
+
+<div id="pageOverlay" class="@OverlayCssClass">
+    <div id="bottomActionbar" class="bg-light text-center pt-4 px-3">
+        <div class="row">
+            <div class="col">
+                <h2>@if (EditMode)
+                    {
+                        <span>Edit</span>
+                    }
+                    else
+                    {
+                        <span>Create</span>
+                    } a project</h2>
+            </div>
+        </div>
+        <div class="row mb-3">
+            <div class="col-2"></div>
+            <div class="col-4 px-4">
+                <input @bind="NewTitle" type="text" class="form-control" placeholder="Enter title..."/>
+            </div>
+            <div class="col-4 px-4">
+                <input @bind="NewDescription" type="text" class="form-control" placeholder="Enter description..."/>
+            </div>
+            <div class="col-2"></div>
+        </div>
+        <div class="row">
+            <div class="col-2"></div>
+            <div class="col-4 px-4">
+                <button class="btn btn-primary w-100" @onclick="SaveProject">Save Project</button>
+            </div>
+            <div class="col-4 px-4">
+                <button class="btn btn-danger w-100" @onclick="SwitchView">Cancel</button>
+            </div>
+            <div class="col-2"></div>
+        </div>
+    </div>
+</div>
+
+@code {
+    private ProjectDto[]? projects;
+
+    private bool hidePopupMenu = true;
+    private string? ButtonCssClass => hidePopupMenu ? null : "hideElement";
+    private string? OverlayCssClass => hidePopupMenu ? "hideElement" : null;
+
+    private string? NewTitle;
+    private string? NewDescription;
+
+    private string? searchField;
+
+    private bool EditMode = false;
+    private ProjectDto editItem = new();
+
+    private async Task ResetSearch()
+    {
+        searchField = null;
+        await LoadItems();
+    }
+
+    private async Task SwitchView()
+    {
+        hidePopupMenu = !hidePopupMenu;
+        EditMode = false;
+        NewTitle = null;
+        NewDescription = null;
+    }
+
+    private void EditItem(int id)
+    {
+        if (projects is null) return;
+        
+        editItem = projects.Single(i => i.Id == id);
+
+        SwitchView();
+        
+        EditMode = true;
+        NewTitle = editItem.Title;
+        NewDescription = editItem.Description;
+    }
+    
+    protected override async Task OnInitializedAsync()
+    {
+        await LoadItems();
+    }
+
+    private async Task LoadItems()
+    {
+        if (!string.IsNullOrWhiteSpace(searchField))
+            projects = await Http.GetFromJsonAsync<ProjectDto[]>("https://localhost:7051/api/project/search?term=" + searchField);
+        else
+            projects = await Http.GetFromJsonAsync<ProjectDto[]>("https://localhost:7051/api/project");
+    }
+
+    private async Task DeleteProject(int id)
+    {
+        var fromServer = await Http.DeleteAsync("https://localhost:7051/api/project/" + id);
+        fromServer.EnsureSuccessStatusCode();
+
+        await LoadItems();
+    }
+
+    private async Task SaveProject()
+    {
+        if (!string.IsNullOrWhiteSpace(NewTitle) && !string.IsNullOrWhiteSpace(NewDescription))
+        {
+            var newEntity = new CreateProjectDto
+            {
+                Title = NewTitle,
+                Description = NewDescription
+            };
+
+            HttpResponseMessage fromServer;
+            if (EditMode)
+                fromServer = await Http.PutAsJsonAsync("https://localhost:7051/api/project/" + editItem.Id, newEntity);
+            else
+                fromServer = await Http.PostAsJsonAsync("https://localhost:7051/api/project", newEntity);
+            
+            fromServer.EnsureSuccessStatusCode();
+            
+            await LoadItems();
+            
+            await SwitchView();
+        }
+    }
+
+    public class ProjectDto
+    {
+        //Unique ID for Project - used for identifying by system
+        public int Id { get; set; }
+    
+        //User defined Title for Project
+        public string Title { get; set; }
+    
+        //User defined Description for Project
+        public string Description { get; set; }
+    
+        //Creation DateTime for Project - defined by system
+        public DateTime Created { get; set; }
+    }
+
+    public class CreateProjectDto
+    {
+        public string Title { get; set; }
+    
+        public string Description { get; set; }
+    }
+}
